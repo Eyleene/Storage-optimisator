@@ -1,10 +1,168 @@
-body{font-family: Arial, Helvetica, sans-serif;background:#f5f6fa;color:#222;padding:18px}
-.container{max-width:1100px;margin:0 auto}
-h1{margin-bottom:10px}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.card{background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
-.wide{grid-column:1 / -1}
-form input{padding:6px;margin:6px 6px 6px 0}
-form button{padding:6px 10px}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-table th, table td{border:1px solid #eee;padding:6px;text-align:left;font-size:14px}
+:root {
+    --bg-color: #f5f6fa;
+    --text-color: #222;
+    --card-bg: #fff;
+    --input-bg: #fff;
+    --input-border: #ccc;
+    --button-bg: #007bff;
+    --button-color: #fff;
+    --table-border: #eee;
+}
+
+body.dark {
+    --bg-color: #1e1e2f;
+    --text-color: #e0e0e0;
+    --card-bg: #2a2a3d;
+    --input-bg: #3a3a4d;
+    --input-border: #555;
+    --button-bg: #4e8cff;
+    --button-color: #fff;
+    --table-border: #555;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: var(--bg-color);
+    color: var(--text-color);
+    padding: 18px;
+    transition: background 0.3s, color 0.3s;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+h1 {
+    margin-bottom: 10px;
+}
+
+.theme-switch {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.card {
+    background: var(--card-bg);
+    padding: 12px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    transition: background 0.3s, color 0.3s;
+}
+
+.wide {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+}
+
+form input {
+    padding: 6px;
+    margin: 6px 6px 6px 0;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text-color);
+    border-radius: 2px;
+    transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+
+form button {
+    padding: 6px 10px;
+    background: var(--button-bg);
+    color: var(--button-color);
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+form button:hover {
+    background: #0056b3;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+table th,
+table td {
+    border: 1px solid var(--table-border);
+    padding: 6px;
+    text-align: left;
+    font-size: 14px;
+    color: var(--text-color);
+    transition: border-color 0.3s;
+
+}
+
+/* The switch - the box around the slider */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+/* The slider */
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    -webkit-transition: .4s;
+    transition: .4s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 26px;
+    width: 26px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    -webkit-transition: .4s;
+    transition: .4s;
+}
+
+input:checked+.slider {
+    background-color: #2196F3;
+}
+
+input:focus+.slider {
+    box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked+.slider:before {
+    -webkit-transform: translateX(26px);
+    -ms-transform: translateX(26px);
+    transform: translateX(26px);
+}
+
+/* Rounded sliders */
+.slider.round {
+    border-radius: 34px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
