@@ -1,13 +1,30 @@
-from flask import Flask, request, jsonify, g, send_from_directory
-import sqlite3, os
+import os
+import sys
+import sqlite3
+from flask import Flask, g, jsonify, request, send_from_directory
+from threading import Timer
+import webbrowser
 
-BASE_DIR = os.path.dirname(__file__)
+# ----------------------------
+# 1. Шляхи до файлів
+# ----------------------------
+if getattr(sys, "frozen", False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(__file__)
+
 DB_PATH = os.path.join(BASE_DIR, "data.db")
 SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
+STATIC_FOLDER = os.path.join(BASE_DIR, "static")
 
-# Статичні файли будуть доступні під /static/...
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+# ----------------------------
+# 2. Flask app
+# ----------------------------
+app = Flask(__name__, static_folder=STATIC_FOLDER, static_url_path="/static")
 
+# ----------------------------
+# 3. Функції роботи з базою
+# ----------------------------
 def get_db():
     db = getattr(g, "_database", None)
     if db is None:
@@ -41,7 +58,9 @@ def close_db(exception):
     if db is not None:
         db.close()
 
-# Головна сторінка — віддаємо static/index.html
+# ----------------------------
+# 4. Маршрути
+# ----------------------------
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
@@ -50,6 +69,7 @@ def index():
 def static_proxy(path):
     return send_from_directory(app.static_folder, path)
 
+# --- API routes: /api/products, /api/locations, /api/stock, /api/receive, /api/pick, /api/transactions
 # API: products
 @app.route("/api/products", methods=["GET","POST"])
 def products():
@@ -212,5 +232,29 @@ def transactions():
                    ORDER BY t.ts DESC LIMIT 200""")
     return jsonify([dict(r) for r in cur.fetchall()])
 
+# ----------------------------
+# 5. Допоміжні функції find_product, find_location
+# ----------------------------
+
+def find_product(db, sku):
+    cur = db.cursor()
+    cur.execute("SELECT id FROM products WHERE sku = ?", (sku,))
+    r = cur.fetchone()
+    return r["id"] if r else None
+
+def find_location(db, code):
+    cur = db.cursor()
+    cur.execute("SELECT id FROM locations WHERE code = ?", (code,))
+    r = cur.fetchone()
+    return r["id"] if r else None
+
+# ----------------------------
+# 6. Запуск сервера і відкриття браузера
+# ----------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = 5000
+    url = f"http://127.0.0.1:{port}/"
+    # відкриваємо браузер через 1 секунду після старту сервера
+    Timer(1, lambda: webbrowser.open(url)).start()
+    app.run(host="0.0.0.0", port=port, debug=True)
+

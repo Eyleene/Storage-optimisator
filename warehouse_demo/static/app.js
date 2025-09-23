@@ -8,13 +8,13 @@
     async function loadProducts(){
       const p = await api("/products")
       const el = document.getElementById("products")
-      el.innerHTML = "<ul>"+p.map(x=>`<li>${x.sku} — ${x.name} (${x.unit})</li>`).join("")+"</ul>"
+      el.innerHTML = "<ul>"+p.map(x=>`<li>${x.sku} - ${x.name} (${x.unit})</li>`).join("")+"</ul>"
       return p
     }
     async function loadLocations(){
       const p = await api("/locations")
       const el = document.getElementById("locations")
-      el.innerHTML = "<ul>"+p.map(x=>`<li>${x.code} — ${x.description||''}</li>`).join("")+"</ul>"
+      el.innerHTML = "<ul>"+p.map(x=>`<li>${x.code} - ${x.description||''}</li>`).join("")+"</ul>"
       return p
     }
     async function loadStock(){
