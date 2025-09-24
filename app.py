@@ -254,6 +254,6 @@ def find_location(db, code):
 if __name__ == "__main__":
     port = 5000
     url = f"http://127.0.0.1:{port}/"
-    if os.environ.get("THE MAIN START-UP TOOL") == "true":  
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":  
         Timer(1, lambda: webbrowser.open(url)).start()
     app.run(host="0.0.0.0", port=port, debug=True)
