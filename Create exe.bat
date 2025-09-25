@@ -1,4 +1,1 @@
 pyinstaller --noconfirm --onefile --add-data "schema.sql;." --add-data "data.db;." --add-data "static;static" --hidden-import sqlite3 app.py
-
-
-
