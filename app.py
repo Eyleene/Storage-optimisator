@@ -383,7 +383,6 @@ def transactions():
     )
     return jsonify([dict(r) for r in cur.fetchall()])
 
-
 # ----------------------------
 # 5. Допоміжні функції find_product, find_location
 # ----------------------------
