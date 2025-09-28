@@ -5,8 +5,20 @@
     --input-bg: #fff;
     --input-border: #ccc;
     --button-bg: #007bff;
+    --button-hover: #0056b3;
     --button-color: #fff;
     --table-border: #eee;
+}
+
+svg {
+    align-self: center;
+    fill: #007bff;
+    transition: background 0.3s, transform 0.2s, color 0.3s;
+}
+
+svg:hover {
+    fill: #0054ae;
+    transform: scale(1.2);
 }
 
 body.dark {
@@ -16,8 +28,31 @@ body.dark {
     --input-bg: #3a3a4d;
     --input-border: #555;
     --button-bg: #4e8cff;
+    --button-hover: #0056b3;
     --button-color: #fff;
     --table-border: #555;
+}
+
+body.dark svg {
+    fill: #b3c8db;
+    transition: background 0.3s, transform 0.2s, color 0.3s;
+}
+
+body.dark svg:hover {
+    fill: #687785;
+    transform: scale(1.2);
+}
+
+body.dark2 {
+    --bg-color: #1d2020;
+    --text-color: #dad3c8;
+    --card-bg: #191a1b;
+    --input-bg: #191a1b;
+    --input-border: #414545;
+    --button-bg: #0c6cd2;
+    --button-hover: #084586;
+    --button-color: #f0ebe2;
+    --table-border: #414545;
 }
 
 body {
@@ -84,7 +119,23 @@ form button {
 }
 
 form button:hover {
-    background: #0056b3;
+    background: var(--button-hover);
+}
+
+.list {
+    display: flex;
+    justify-content: space-between;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+}
+
+.pagination svg {
+    padding-left: 10px;
+    padding-right: 10px;
 }
 
 table {
@@ -165,4 +216,29 @@ input:checked+.slider:before {
 
 .slider.round:before {
     border-radius: 50%;
+}
+
+.small-btn {
+    background: none;
+    border: none;
+    color: var(--button-color);
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s, color 0.3s;
+}
+
+.small-btn:hover {
+    background: transparent;
+    transform: scale(1.1);
+    color: var(--button-hover);
+}
+
+body.dark .small-btn {
+    color: b3c8db;
+}
+
+body.dark .small-btn:hover {
+    fill: #687785;
+    transform: scale(1.2);
 }
