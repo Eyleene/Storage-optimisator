@@ -122,6 +122,22 @@ form button:hover {
     background: var(--button-hover);
 }
 
+.list {
+    display: flex;
+    justify-content: space-between;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+}
+
+.pagination svg {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;

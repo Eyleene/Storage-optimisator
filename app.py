@@ -80,6 +80,14 @@ def index():
 def static_proxy(path):
     return send_from_directory(app.static_folder, path)
 
+@app.route("/products")
+def get_products():
+    page = int(request.args.get("page", 1))
+    limit = int(request.args.get("limit", 10))
+    total = db.count("products")
+    products = db.select("products", offset=(page-1)*limit, limit=limit)
+    totalPages = (total + limit - 1) // limit
+    return jsonify({"items": products, "totalPages": totalPages})
 
 # --- Products CRUD ---
 @app.route("/api/products", methods=["GET", "POST"])
@@ -151,6 +159,14 @@ def product_item(pid):
         return jsonify({"ok": True})
 
 # --- Locations CRUD ---
+@app.route("/locations")
+def get_locations():
+    page = int(request.args.get("page", 1))
+    limit = int(request.args.get("limit", 1))
+    total = db.count("locations", offset=(page-1)*limit, limit=limit)
+    totalPages = (total + limit - 1) // limit
+    return jsonify({"items": products, "totalPages": totalPages})
+
 @app.route("/api/locations", methods=["GET", "POST"])
 def locations():
     db = get_db()
