@@ -81,16 +81,14 @@ def static_proxy(path):
     return send_from_directory(app.static_folder, path)
 
 
-# --- API routes: /api/products, /api/locations, /api/stock, /api/receive, /api/pick, /api/transactions
-# API: products
+# --- Products CRUD ---
 @app.route("/api/products", methods=["GET", "POST"])
 def products():
     db = get_db()
     cur = db.cursor()
     if request.method == "GET":
         cur.execute("SELECT id, sku, name, unit FROM products ORDER BY sku")
-        rows = [dict(r) for r in cur.fetchall()]
-        return jsonify(rows)
+        return jsonify([dict(r) for r in cur.fetchall()])
     data = request.get_json() or {}
     sku = data.get("sku")
     name = data.get("name")
@@ -106,8 +104,53 @@ def products():
     except sqlite3.IntegrityError as e:
         return jsonify({"error": str(e)}), 400
 
+# --- API routes: /api/products, /api/locations, /api/stock, /api/receive, /api/pick, /api/transactions
+# API: products
+@app.route("/api/products/<int:pid>", methods=["GET", "PUT", "DELETE"])
+def product_item(pid):
+    db = get_db()
+    cur = db.cursor()
+    if request.method == "GET":
+        cur.execute("SELECT id, sku, name, unit FROM products WHERE id = ?", (pid,))
+        r = cur.fetchone()
+        if not r:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(dict(r))
+    if request.method == "PUT":
+        data = request.get_json() or {}
+        sku = data.get("sku")
+        name = data.get("name")
+        unit = data.get("unit", "шт")
+        if not sku or not name:
+            return jsonify({"error": "sku and name required"}), 400
+        try:
+            cur.execute(
+                "UPDATE products SET sku=?, name=?, unit=? WHERE id=?",
+                (sku, name, unit, pid),
+            )
+            if cur.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+            db.commit()
+            return jsonify({"ok": True})
+        except sqlite3.IntegrityError as e:
+            return jsonify({"error": str(e)}), 400
+    if request.method == "DELETE":
+        # prevent deletion if product has transactions
+        cur.execute(
+            "SELECT COUNT(*) as c FROM transactions WHERE product_id = ?", (pid,)
+        )
+        if cur.fetchone()["c"] > 0:
+            return (
+                jsonify({"error": "cannot delete product: transactions exist"}),
+                400,
+            )
+        cur.execute("DELETE FROM products WHERE id = ?", (pid,))
+        if cur.rowcount == 0:
+            return jsonify({"error": "not found"}), 404
+        db.commit()
+        return jsonify({"ok": True})
 
-# API: locations
+# --- Locations CRUD ---
 @app.route("/api/locations", methods=["GET", "POST"])
 def locations():
     db = get_db()
@@ -128,6 +171,53 @@ def locations():
         return jsonify({"ok": True}), 201
     except sqlite3.IntegrityError as e:
         return jsonify({"error": str(e)}), 400
+
+@app.route("/api/locations/<int:lid>", methods=["GET", "PUT", "DELETE"])
+def location_item(lid):
+    db = get_db()
+    cur = db.cursor()
+    if request.method == "GET":
+        cur.execute(
+            "SELECT id, code, description FROM locations WHERE id = ?", (lid,)
+        )
+        r = cur.fetchone()
+        if not r:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(dict(r))
+    if request.method == "PUT":
+        data = request.get_json() or {}
+        code = data.get("code")
+        desc = data.get("description", "")
+        if not code:
+            return jsonify({"error": "code required"}), 400
+        try:
+            cur.execute(
+                "UPDATE locations SET code=?, description=? WHERE id=?",
+                (code, desc, lid),
+            )
+            if cur.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+            db.commit()
+            return jsonify({"ok": True})
+        except sqlite3.IntegrityError as e:
+            return jsonify({"error": str(e)}), 400
+    if request.method == "DELETE":
+        # prevent deletion if transactions reference this location
+        cur.execute(
+            "SELECT COUNT(*) as c FROM transactions WHERE location_id = ?", (lid,)
+        )
+        if cur.fetchone()["c"] > 0:
+            return (
+                jsonify(
+                    {"error": "cannot delete location: referenced by transactions"}
+                ),
+                400,
+            )
+        cur.execute("DELETE FROM locations WHERE id = ?", (lid,))
+        if cur.rowcount == 0:
+            return jsonify({"error": "not found"}), 404
+        db.commit()
+        return jsonify({"ok": True})
 
 
 # API: stock
