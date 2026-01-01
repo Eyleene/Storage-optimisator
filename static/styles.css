@@ -8,6 +8,7 @@
     --button-hover: #0056b3;
     --button-color: #fff;
     --table-border: #eee;
+    --accent-color: #007bff;
 }
 
 svg {
@@ -17,46 +18,36 @@ svg {
 }
 
 svg:hover {
-    fill: #0054ae;
+    fill: #0056b3;
     transform: scale(1.2);
 }
 
+/* Premium Dark Theme (matching Login page) */
 body.dark {
-    --bg-color: #1e1e2f;
+    --bg-color: #121212;
     --text-color: #e0e0e0;
-    --card-bg: #2a2a3d;
-    --input-bg: #3a3a4d;
-    --input-border: #555;
-    --button-bg: #4e8cff;
-    --button-hover: #0056b3;
+    --card-bg: #1e1e1e;
+    --input-bg: #2d2d2d;
+    --input-border: #444;
+    --button-bg: #ff5722;
+    --button-hover: #e64a19;
     --button-color: #fff;
-    --table-border: #555;
+    --table-border: #333;
+    --accent-color: #ff5722;
 }
 
 body.dark svg {
-    fill: #b3c8db;
+    fill: #ff5722;
     transition: background 0.3s, transform 0.2s, color 0.3s;
 }
 
 body.dark svg:hover {
-    fill: #687785;
+    fill: #e64a19;
     transform: scale(1.2);
 }
 
-body.dark2 {
-    --bg-color: #1d2020;
-    --text-color: #dad3c8;
-    --card-bg: #191a1b;
-    --input-bg: #191a1b;
-    --input-border: #414545;
-    --button-bg: #0c6cd2;
-    --button-hover: #084586;
-    --button-color: #f0ebe2;
-    --table-border: #414545;
-}
-
 body {
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: 'Inter', Arial, Helvetica, sans-serif;
     background: var(--bg-color);
     color: var(--text-color);
     padding: 18px;
@@ -66,17 +57,56 @@ body {
 .container {
     max-width: 1100px;
     margin: 0 auto;
+    position: relative;
 }
 
 h1 {
     margin-bottom: 10px;
 }
 
-.theme-switch {
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 15px;
+}
+
+.theme-switch {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.logout-btn {
+    background: var(--button-bg);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: background 0.2s;
+}
+
+.logout-btn:hover {
+    background: var(--button-hover);
+}
+
+/* Main layout - sidebar doesn't affect content */
+.main-layout {
+    position: relative;
+}
+
+/* Admin Sidebar - positioned outside main content flow */
+.sidebar {
+    position: fixed;
+    left: 20px;
+    top: 100px;
+    width: 240px;
+    z-index: 100;
+}
+
+.content {
+    width: 100%;
 }
 
 .grid {
@@ -91,6 +121,7 @@ h1 {
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     transition: background 0.3s, color 0.3s;
+    border: 1px solid var(--table-border);
 }
 
 .wide {
@@ -98,23 +129,31 @@ h1 {
     margin-top: 12px;
 }
 
-form input {
-    padding: 6px;
+form input,
+form select {
+    padding: 8px;
     margin: 6px 6px 6px 0;
     background: var(--input-bg);
     border: 1px solid var(--input-border);
     color: var(--text-color);
-    border-radius: 2px;
+    border-radius: 4px;
     transition: background 0.3s, color 0.3s, border-color 0.3s;
 }
 
+form input:focus,
+form select:focus {
+    outline: 2px solid var(--accent-color);
+    border-color: transparent;
+}
+
 form button {
-    padding: 6px 10px;
+    padding: 8px 12px;
     background: var(--button-bg);
     color: var(--button-color);
     border: none;
-    border-radius: 2px;
+    border-radius: 4px;
     cursor: pointer;
+    font-weight: 600;
     transition: background 0.3s;
 }
 
@@ -125,6 +164,7 @@ form button:hover {
 .list {
     display: flex;
     justify-content: space-between;
+    padding: 4px 0;
 }
 
 .pagination {
@@ -147,12 +187,15 @@ table {
 table th,
 table td {
     border: 1px solid var(--table-border);
-    padding: 6px;
+    padding: 8px;
     text-align: left;
     font-size: 14px;
     color: var(--text-color);
     transition: border-color 0.3s;
+}
 
+table th {
+    background: var(--input-bg);
 }
 
 /* The switch - the box around the slider */
@@ -196,11 +239,11 @@ table td {
 }
 
 input:checked+.slider {
-    background-color: #2196F3;
+    background-color: var(--accent-color);
 }
 
 input:focus+.slider {
-    box-shadow: 0 0 1px #2196F3;
+    box-shadow: 0 0 1px var(--accent-color);
 }
 
 input:checked+.slider:before {
@@ -234,11 +277,102 @@ input:checked+.slider:before {
     color: var(--button-hover);
 }
 
-body.dark .small-btn {
-    color: b3c8db;
+/* Admin Panel Sidebar */
+.admin-card {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-body.dark .small-btn:hover {
-    fill: #687785;
-    transform: scale(1.2);
+.admin-card h2 {
+    color: var(--accent-color);
+    font-size: 1.1em;
+    margin-bottom: 12px;
+}
+
+.admin-card form {
+    display: flex;
+    flex-direction: column;
+}
+
+.admin-card form input,
+.admin-card form select {
+    margin: 0 0 8px 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.admin-card form button {
+    background-color: var(--button-bg);
+}
+
+/* Custom Autocomplete Dropdown */
+.autocomplete-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 200px;
+    z-index: 1000;
+    background: var(--card-bg);
+    border: 1px solid var(--input-border);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 180px;
+    /* ~5 items * 36px */
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: none;
+}
+
+.autocomplete-list.show {
+    display: block;
+}
+
+.autocomplete-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--table-border);
+    transition: background 0.15s;
+}
+
+.autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+    background: var(--button-bg);
+    color: white;
+}
+
+.autocomplete-item .code {
+    font-weight: 600;
+}
+
+.autocomplete-item .desc {
+    font-size: 0.85em;
+    opacity: 0.7;
+    margin-left: 8px;
+}
+
+/* Scrollbar styling for autocomplete */
+.autocomplete-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.autocomplete-list::-webkit-scrollbar-track {
+    background: var(--input-bg);
+}
+
+.autocomplete-list::-webkit-scrollbar-thumb {
+    background: var(--accent-color);
+    border-radius: 4px;
+}
+
+.autocomplete-list::-webkit-scrollbar-thumb:hover {
+    background: var(--button-hover);
 }

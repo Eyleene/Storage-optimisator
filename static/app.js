@@ -3,7 +3,106 @@ async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch("/api" + path, opts);
+  if (res.status === 401 || res.status === 403) {
+    window.location.href = "/login";
+    return { error: "Unauthorized" };
+  }
   return res.json();
+}
+
+// ---------------- Custom Autocomplete ----------------
+function setupAutocomplete(input, getItems, displayFn) {
+  // Don't setup if already wrapped
+  if (input.parentNode.classList.contains('autocomplete-wrapper')) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'autocomplete-wrapper';
+  input.parentNode.insertBefore(wrapper, input);
+  wrapper.appendChild(input);
+
+  const list = document.createElement('div');
+  list.className = 'autocomplete-list';
+  wrapper.appendChild(list);
+
+  let activeIndex = -1;
+
+  function showSuggestions(query) {
+    const items = getItems();
+    if (!items || items.length === 0) {
+      list.classList.remove('show');
+      return;
+    }
+
+    const q = query.toLowerCase().trim();
+    const filtered = q ? items.filter(item => displayFn(item).toLowerCase().includes(q)) : items.slice(0, 10);
+
+    if (filtered.length === 0) {
+      list.classList.remove('show');
+      return;
+    }
+
+    list.innerHTML = filtered.map((item, i) => {
+      const display = displayFn(item);
+      const parts = display.split(' — ');
+      return `<div class="autocomplete-item" data-value="${parts[0]}" data-index="${i}">
+        <span class="code">${parts[0]}</span>
+        ${parts[1] ? `<span class="desc">${parts[1]}</span>` : ''}
+      </div>`;
+    }).join('');
+
+    list.classList.add('show');
+    activeIndex = -1;
+  }
+
+  function selectItem(value) {
+    input.value = value;
+    list.classList.remove('show');
+    input.focus();
+  }
+
+  function updateActive() {
+    const items = list.querySelectorAll('.autocomplete-item');
+    items.forEach((el, i) => {
+      el.classList.toggle('active', i === activeIndex);
+    });
+    if (activeIndex >= 0 && items[activeIndex]) {
+      items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  input.addEventListener('input', () => showSuggestions(input.value));
+  input.addEventListener('focus', () => showSuggestions(input.value));
+
+  input.addEventListener('keydown', (e) => {
+    const items = list.querySelectorAll('.autocomplete-item');
+    if (!list.classList.contains('show') || items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, items.length - 1);
+      updateActive();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      updateActive();
+    } else if (e.key === 'Enter' && activeIndex >= 0) {
+      e.preventDefault();
+      selectItem(items[activeIndex].dataset.value);
+    } else if (e.key === 'Escape') {
+      list.classList.remove('show');
+    }
+  });
+
+  list.addEventListener('click', (e) => {
+    const item = e.target.closest('.autocomplete-item');
+    if (item) selectItem(item.dataset.value);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!wrapper.contains(e.target)) {
+      list.classList.remove('show');
+    }
+  });
 }
 
 // ---------------- Products CRUD ----------------
@@ -23,7 +122,7 @@ async function loadProducts(page = 1) {
     allProducts = p;
   }
 
-  const totalPages = Math.ceil(allProducts.length / productLimit);
+  const totalPages = Math.ceil(allProducts.length / productLimit) || 1;
   productPage = Math.min(Math.max(1, page), totalPages);
 
   const start = (productPage - 1) * productLimit;
@@ -34,20 +133,22 @@ async function loadProducts(page = 1) {
     `<div data-id="${x.id}" class="list">
       <div><b>${x.sku}</b> — ${x.name} (${x.unit})</div>
       <div>
-        <button class="small-btn" onclick="editProduct(${x.id})"><svg alt="✏️" viewBox="0 0 640 640" width="20" height="20""><path d="M100.4 417.2C104.5 402.6 112.2 389.3 123 378.5L304.2 197.3L338.1 163.4C354.7 180 389.4 214.7 442.1 267.4L476 301.3L442.1 335.2L260.9 516.4C250.2 527.1 236.8 534.9 222.2 539L94.4 574.6C86.1 576.9 77.1 574.6 71 568.4C64.9 562.2 62.6 553.3 64.9 545L100.4 417.2zM156 413.5C151.6 418.2 148.4 423.9 146.7 430.1L122.6 517L209.5 492.9C215.9 491.1 221.7 487.8 226.5 483.2L155.9 413.5zM510 267.4C493.4 250.8 458.7 216.1 406 163.4L372 129.5C398.5 103 413.4 88.1 416.9 84.6C430.4 71 448.8 63.4 468 63.4C487.2 63.4 505.6 71 519.1 84.6L554.8 120.3C568.4 133.9 576 152.3 576 171.4C576 190.5 568.4 209 554.8 222.5C551.3 226 536.4 240.9 509.9 267.4z"/></svg></button>
-        <button class="small-btn" onclick="deleteProduct(${x.id})"><svg alt="🗑️" viewBox="0 0 640 640" width="20" height="20""><path d="M232.7 69.9C237.1 56.8 249.3 48 263.1 48L377 48C390.8 48 403 56.8 407.4 69.9L416 96L512 96C529.7 96 544 110.3 544 128C544 145.7 529.7 160 512 160L128 160C110.3 160 96 145.7 96 128C96 110.3 110.3 96 128 96L224 96L232.7 69.9zM128 208L512 208L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 208zM216 272C202.7 272 192 282.7 192 296L192 488C192 501.3 202.7 512 216 512C229.3 512 240 501.3 240 488L240 296C240 282.7 229.3 272 216 272zM320 272C306.7 272 296 282.7 296 296L296 488C296 501.3 306.7 512 320 512C333.3 512 344 501.3 344 488L344 296C344 282.7 333.3 272 320 272zM424 272C410.7 272 400 282.7 400 296L400 488C400 501.3 410.7 512 424 512C437.3 512 448 501.3 448 488L448 296C448 282.7 437.3 272 424 272z" /></svg></button>
+        <button class="small-btn" onclick="editProduct(${x.id})"><svg alt="✏️" viewBox="0 0 640 640" width="20" height="20"><path d="M100.4 417.2C104.5 402.6 112.2 389.3 123 378.5L304.2 197.3L338.1 163.4C354.7 180 389.4 214.7 442.1 267.4L476 301.3L442.1 335.2L260.9 516.4C250.2 527.1 236.8 534.9 222.2 539L94.4 574.6C86.1 576.9 77.1 574.6 71 568.4C64.9 562.2 62.6 553.3 64.9 545L100.4 417.2zM156 413.5C151.6 418.2 148.4 423.9 146.7 430.1L122.6 517L209.5 492.9C215.9 491.1 221.7 487.8 226.5 483.2L155.9 413.5zM510 267.4C493.4 250.8 458.7 216.1 406 163.4L372 129.5C398.5 103 413.4 88.1 416.9 84.6C430.4 71 448.8 63.4 468 63.4C487.2 63.4 505.6 71 519.1 84.6L554.8 120.3C568.4 133.9 576 152.3 576 171.4C576 190.5 568.4 209 554.8 222.5C551.3 226 536.4 240.9 509.9 267.4z"/></svg></button>
+        <button class="small-btn" onclick="deleteProduct(${x.id})"><svg alt="🗑️" viewBox="0 0 640 640" width="20" height="20"><path d="M232.7 69.9C237.1 56.8 249.3 48 263.1 48L377 48C390.8 48 403 56.8 407.4 69.9L416 96L512 96C529.7 96 544 110.3 544 128C544 145.7 529.7 160 512 160L128 160C110.3 160 96 145.7 96 128C96 110.3 110.3 96 128 96L224 96L232.7 69.9zM128 208L512 208L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 208zM216 272C202.7 272 192 282.7 192 296L192 488C192 501.3 202.7 512 216 512C229.3 512 240 501.3 240 488L240 296C240 282.7 229.3 272 216 272zM320 272C306.7 272 296 282.7 296 296L296 488C296 501.3 306.7 512 320 512C333.3 512 344 501.3 344 488L344 296C344 282.7 333.3 272 320 272zM424 272C410.7 272 400 282.7 400 296L400 488C400 501.3 410.7 512 424 512C437.3 512 448 501.3 448 488L448 296C448 282.7 437.3 272 424 272z" /></svg></button>
       </div>
     </div>`).join("");
 
   // Pagination
-  const pagination = document.createElement("div");
-  pagination.innerHTML =
-    `<div class="pagination">
-      <button class="small-btn" ${productPage <= 1 ? 'disabled' : ''} onclick="loadProducts(${productPage - 1})"><svg alt="Попередня" viewBox="0 0 640 640" width="20" height="20""><path d="M73.4 297.4C60.9 309.9 60.9 330.2 73.4 342.7L233.4 502.7C245.9 515.2 266.2 515.2 278.7 502.7C291.2 490.2 291.2 469.9 278.7 457.4L173.3 352L544 352C561.7 352 576 337.7 576 320C576 302.3 561.7 288 544 288L173.3 288L278.7 182.6C291.2 170.1 291.2 149.8 278.7 137.3C266.2 124.8 245.9 124.8 233.4 137.3L73.4 297.3z"/></svg></button>
-      <span>Сторінка ${productPage} з ${totalPages}</span>
-      <button class="small-btn" ${productPage >= totalPages ? 'disabled' : ''} onclick="loadProducts(${productPage + 1})"><svg alt="Наступна" viewBox="0 0 640 640" width="20" height="20""><path d="M566.6 342.6C579.1 330.1 579.1 309.8 566.6 297.3L406.6 137.3C394.1 124.8 373.8 124.8 361.3 137.3C348.8 149.8 348.8 170.1 361.3 182.6L466.7 288L96 288C78.3 288 64 302.3 64 320C64 337.7 78.3 352 96 352L466.7 352L361.3 457.4C348.8 469.9 348.8 490.2 361.3 502.7C373.8 515.2 394.1 515.2 406.6 502.7L566.6 342.7z"/></svg></button>
-    </div>`;
-  el.appendChild(pagination);
+  if (totalPages > 1) {
+    const pagination = document.createElement("div");
+    pagination.innerHTML =
+      `<div class="pagination">
+        <button class="small-btn" ${productPage <= 1 ? 'disabled' : ''} onclick="loadProducts(${productPage - 1})"><svg alt="Попередня" viewBox="0 0 640 640" width="20" height="20"><path d="M73.4 297.4C60.9 309.9 60.9 330.2 73.4 342.7L233.4 502.7C245.9 515.2 266.2 515.2 278.7 502.7C291.2 490.2 291.2 469.9 278.7 457.4L173.3 352L544 352C561.7 352 576 337.7 576 320C576 302.3 561.7 288 544 288L173.3 288L278.7 182.6C291.2 170.1 291.2 149.8 278.7 137.3C266.2 124.8 245.9 124.8 233.4 137.3L73.4 297.3z"/></svg></button>
+        <span>Сторінка ${productPage} з ${totalPages}</span>
+        <button class="small-btn" ${productPage >= totalPages ? 'disabled' : ''} onclick="loadProducts(${productPage + 1})"><svg alt="Наступна" viewBox="0 0 640 640" width="20" height="20"><path d="M566.6 342.6C579.1 330.1 579.1 309.8 566.6 297.3L406.6 137.3C394.1 124.8 373.8 124.8 361.3 137.3C348.8 149.8 348.8 170.1 361.3 182.6L466.7 288L96 288C78.3 288 64 302.3 64 320C64 337.7 78.3 352 96 352L466.7 352L361.3 457.4C348.8 469.9 348.8 490.2 361.3 502.7C373.8 515.2 394.1 515.2 406.6 502.7L566.6 342.7z"/></svg></button>
+      </div>`;
+    el.appendChild(pagination);
+  }
 }
 
 async function createProduct(form) {
@@ -107,7 +208,7 @@ async function loadLocations(page = 1) {
     allLocations = l;
   }
 
-  const totalPages = Math.ceil(allLocations.length / locationLimit);
+  const totalPages = Math.ceil(allLocations.length / locationLimit) || 1;
   locationPage = Math.min(Math.max(1, page), totalPages);
 
   const start = (locationPage - 1) * locationLimit;
@@ -118,19 +219,21 @@ async function loadLocations(page = 1) {
     `<div data-id="${x.id}" class="list">
       <div><b>${x.code}</b> — ${x.description || ''}</div>
       <div>
-        <button class="small-btn" onclick="editLocation(${x.id})"><svg alt="✏️" viewBox="0 0 640 640" width="20" height="20""><path d="M100.4 417.2C104.5 402.6 112.2 389.3 123 378.5L304.2 197.3L338.1 163.4C354.7 180 389.4 214.7 442.1 267.4L476 301.3L442.1 335.2L260.9 516.4C250.2 527.1 236.8 534.9 222.2 539L94.4 574.6C86.1 576.9 77.1 574.6 71 568.4C64.9 562.2 62.6 553.3 64.9 545L100.4 417.2zM156 413.5C151.6 418.2 148.4 423.9 146.7 430.1L122.6 517L209.5 492.9C215.9 491.1 221.7 487.8 226.5 483.2L155.9 413.5zM510 267.4C493.4 250.8 458.7 216.1 406 163.4L372 129.5C398.5 103 413.4 88.1 416.9 84.6C430.4 71 448.8 63.4 468 63.4C487.2 63.4 505.6 71 519.1 84.6L554.8 120.3C568.4 133.9 576 152.3 576 171.4C576 190.5 568.4 209 554.8 222.5C551.3 226 536.4 240.9 509.9 267.4z"/></svg></button>
-        <button class="small-btn" onclick="deleteLocation(${x.id})"><svg alt="🗑️" viewBox="0 0 640 640" width="20" height="20""><path d="M232.7 69.9C237.1 56.8 249.3 48 263.1 48L377 48C390.8 48 403 56.8 407.4 69.9L416 96L512 96C529.7 96 544 110.3 544 128C544 145.7 529.7 160 512 160L128 160C110.3 160 96 145.7 96 128C96 110.3 110.3 96 128 96L224 96L232.7 69.9zM128 208L512 208L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 208zM216 272C202.7 272 192 282.7 192 296L192 488C192 501.3 202.7 512 216 512C229.3 512 240 501.3 240 488L240 296C240 282.7 229.3 272 216 272zM320 272C306.7 272 296 282.7 296 296L296 488C296 501.3 306.7 512 320 512C333.3 512 344 501.3 344 488L344 296C344 282.7 333.3 272 320 272zM424 272C410.7 272 400 282.7 400 296L400 488C400 501.3 410.7 512 424 512C437.3 512 448 501.3 448 488L448 296C448 282.7 437.3 272 424 272z" /></svg></button>
+        <button class="small-btn" onclick="editLocation(${x.id})"><svg alt="✏️" viewBox="0 0 640 640" width="20" height="20"><path d="M100.4 417.2C104.5 402.6 112.2 389.3 123 378.5L304.2 197.3L338.1 163.4C354.7 180 389.4 214.7 442.1 267.4L476 301.3L442.1 335.2L260.9 516.4C250.2 527.1 236.8 534.9 222.2 539L94.4 574.6C86.1 576.9 77.1 574.6 71 568.4C64.9 562.2 62.6 553.3 64.9 545L100.4 417.2zM156 413.5C151.6 418.2 148.4 423.9 146.7 430.1L122.6 517L209.5 492.9C215.9 491.1 221.7 487.8 226.5 483.2L155.9 413.5zM510 267.4C493.4 250.8 458.7 216.1 406 163.4L372 129.5C398.5 103 413.4 88.1 416.9 84.6C430.4 71 448.8 63.4 468 63.4C487.2 63.4 505.6 71 519.1 84.6L554.8 120.3C568.4 133.9 576 152.3 576 171.4C576 190.5 568.4 209 554.8 222.5C551.3 226 536.4 240.9 509.9 267.4z"/></svg></button>
+        <button class="small-btn" onclick="deleteLocation(${x.id})"><svg alt="🗑️" viewBox="0 0 640 640" width="20" height="20"><path d="M232.7 69.9C237.1 56.8 249.3 48 263.1 48L377 48C390.8 48 403 56.8 407.4 69.9L416 96L512 96C529.7 96 544 110.3 544 128C544 145.7 529.7 160 512 160L128 160C110.3 160 96 145.7 96 128C96 110.3 110.3 96 128 96L224 96L232.7 69.9zM128 208L512 208L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 208zM216 272C202.7 272 192 282.7 192 296L192 488C192 501.3 202.7 512 216 512C229.3 512 240 501.3 240 488L240 296C240 282.7 229.3 272 216 272zM320 272C306.7 272 296 282.7 296 296L296 488C296 501.3 306.7 512 320 512C333.3 512 344 501.3 344 488L344 296C344 282.7 333.3 272 320 272zM424 272C410.7 272 400 282.7 400 296L400 488C400 501.3 410.7 512 424 512C437.3 512 448 501.3 448 488L448 296C448 282.7 437.3 272 424 272z" /></svg></button>
       </div>
     </div>`).join("");
 
-  const pagination = document.createElement("div");
-  pagination.innerHTML =
-    `<div class="pagination">
-      <button class="small-btn" ${locationPage <= 1 ? 'disabled' : ''} onclick="loadLocations(${locationPage - 1})"><svg alt="Попередня" viewBox="0 0 640 640" width="20" height="20""><path d="M73.4 297.4C60.9 309.9 60.9 330.2 73.4 342.7L233.4 502.7C245.9 515.2 266.2 515.2 278.7 502.7C291.2 490.2 291.2 469.9 278.7 457.4L173.3 352L544 352C561.7 352 576 337.7 576 320C576 302.3 561.7 288 544 288L173.3 288L278.7 182.6C291.2 170.1 291.2 149.8 278.7 137.3C266.2 124.8 245.9 124.8 233.4 137.3L73.4 297.3z"/></svg></button>
-      <span>Сторінка ${locationPage} з ${totalPages}</span>
-      <button class="small-btn" ${locationPage >= totalPages ? 'disabled' : ''} onclick="loadLocations(${locationPage + 1})"><svg alt="Наступна" viewBox="0 0 640 640" width="20" height="20""><path d="M566.6 342.6C579.1 330.1 579.1 309.8 566.6 297.3L406.6 137.3C394.1 124.8 373.8 124.8 361.3 137.3C348.8 149.8 348.8 170.1 361.3 182.6L466.7 288L96 288C78.3 288 64 302.3 64 320C64 337.7 78.3 352 96 352L466.7 352L361.3 457.4C348.8 469.9 348.8 490.2 361.3 502.7C373.8 515.2 394.1 515.2 406.6 502.7L566.6 342.7z"/></svg></button>
-    </div>`;
-  el.appendChild(pagination);
+  if (totalPages > 1) {
+    const pagination = document.createElement("div");
+    pagination.innerHTML =
+      `<div class="pagination">
+        <button class="small-btn" ${locationPage <= 1 ? 'disabled' : ''} onclick="loadLocations(${locationPage - 1})"><svg alt="Попередня" viewBox="0 0 640 640" width="20" height="20"><path d="M73.4 297.4C60.9 309.9 60.9 330.2 73.4 342.7L233.4 502.7C245.9 515.2 266.2 515.2 278.7 502.7C291.2 490.2 291.2 469.9 278.7 457.4L173.3 352L544 352C561.7 352 576 337.7 576 320C576 302.3 561.7 288 544 288L173.3 288L278.7 182.6C291.2 170.1 291.2 149.8 278.7 137.3C266.2 124.8 245.9 124.8 233.4 137.3L73.4 297.3z"/></svg></button>
+        <span>Сторінка ${locationPage} з ${totalPages}</span>
+        <button class="small-btn" ${locationPage >= totalPages ? 'disabled' : ''} onclick="loadLocations(${locationPage + 1})"><svg alt="Наступна" viewBox="0 0 640 640" width="20" height="20"><path d="M566.6 342.6C579.1 330.1 579.1 309.8 566.6 297.3L406.6 137.3C394.1 124.8 373.8 124.8 361.3 137.3C348.8 149.8 348.8 170.1 361.3 182.6L466.7 288L96 288C78.3 288 64 302.3 64 320C64 337.7 78.3 352 96 352L466.7 352L361.3 457.4C348.8 469.9 348.8 490.2 361.3 502.7C373.8 515.2 394.1 515.2 406.6 502.7L566.6 342.7z"/></svg></button>
+      </div>`;
+    el.appendChild(pagination);
+  }
 }
 
 async function createLocation(form) {
@@ -170,12 +273,14 @@ async function deleteLocation(id) {
 // ---------------- Stock / Transactions ----------------
 async function loadStock() {
   const s = await api("/stock");
+  if (s.error) return;
   const tbody = document.querySelector("#stock-table tbody");
   tbody.innerHTML = s.map(r => `<tr><td>${r.sku}</td><td>${r.name}</td><td>${r.location}</td><td>${r.batch || ""}</td><td>${r.quantity}</td></tr>`).join("");
 }
 
 async function loadTrans() {
   const t = await api("/transactions");
+  if (t.error) return;
   const el = document.getElementById("transactions");
   el.innerHTML = "<ol>" + t.map(x => `<li>[${x.ts}] ${x.type} ${x.sku} ${x.qty} @ ${x.location || "-"} ${x.batch || ""}</li>`).join("") + "</ol>";
 }
@@ -207,8 +312,95 @@ document.getElementById("pick-form").addEventListener("submit", async e => {
 document.getElementById("refresh-stock").addEventListener("click", loadStock);
 document.getElementById("refresh-trans").addEventListener("click", loadTrans);
 
+// ---------------- Admin ----------------
+async function loadUser() {
+  const me = await api("/me");
+  if (me && me.role === "admin") {
+    const sidebar = document.getElementById("admin-sidebar");
+    if (sidebar) sidebar.style.display = "block";
+    loadUsers();
+  }
+}
+
+async function loadUsers() {
+  const users = await api("/users");
+  if (users.error) return;
+  const el = document.getElementById("users-list");
+  el.innerHTML = users.map(u =>
+    `<div class="list">
+      <div><b>${u.username}</b> (${u.role})</div>
+      ${u.username !== 'admin' ? `<button class="small-btn" onclick="deleteUser(${u.id})">❌</button>` : ''}
+    </div>`
+  ).join("");
+}
+
+async function createUser(form) {
+  const body = {
+    username: form.username.value.trim(),
+    password: form.password.value.trim(),
+    role: form.role.value
+  };
+  const r = await api("/users", "POST", body);
+  if (r.error) alert(r.error);
+  else { form.reset(); loadUsers(); }
+}
+
+async function deleteUser(id) {
+  if (!confirm("Видалити користувача?")) return;
+  const r = await api("/users/" + id, "DELETE");
+  if (r.error) alert(r.error);
+  else loadUsers();
+}
+
+document.getElementById("user-form").addEventListener("submit", async e => { e.preventDefault(); createUser(e.target); });
+
+// ---------------- Setup Autocomplete ----------------
+function initAutocomplete() {
+  // === Products form ===
+  const productSkuInput = document.querySelector('#product-form input[name="sku"]');
+  if (productSkuInput) {
+    setupAutocomplete(productSkuInput, () => allProducts, p => `${p.sku} — ${p.name}`);
+  }
+
+  // === Locations form ===
+  const locationCodeInput = document.querySelector('#location-form input[name="code"]');
+  if (locationCodeInput) {
+    setupAutocomplete(locationCodeInput, () => allLocations, l => `${l.code} — ${l.description || ''}`);
+  }
+
+  // === Receive form ===
+  const receiveSkuInput = document.querySelector('#receive-form input[name="sku"]');
+  if (receiveSkuInput) {
+    setupAutocomplete(receiveSkuInput, () => allProducts, p => `${p.sku} — ${p.name}`);
+  }
+
+  const receiveLocInput = document.querySelector('#receive-form input[name="location"]');
+  if (receiveLocInput) {
+    setupAutocomplete(receiveLocInput, () => allLocations, l => `${l.code} — ${l.description || ''}`);
+  }
+
+  // === Pick form ===
+  const pickSkuInput = document.querySelector('#pick-form input[name="sku"]');
+  if (pickSkuInput) {
+    setupAutocomplete(pickSkuInput, () => allProducts, p => `${p.sku} — ${p.name}`);
+  }
+
+  const pickLocInput = document.querySelector('#pick-form input[name="location"]');
+  if (pickLocInput) {
+    setupAutocomplete(pickLocInput, () => allLocations, l => `${l.code} — ${l.description || ''}`);
+  }
+}
+
 // ---------------- Initial load ----------------
-loadProducts();
-loadLocations();
-loadStock();
-loadTrans();
+async function init() {
+  await loadProducts();
+  await loadLocations();
+  await loadStock();
+  await loadTrans();
+  await loadUser();
+
+  // Setup autocomplete after data is loaded
+  initAutocomplete();
+}
+
+init();

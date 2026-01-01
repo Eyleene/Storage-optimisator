@@ -1,351 +1,412 @@
 import os
 import sys
-import sqlite3
-from flask import Flask, g, jsonify, request, send_from_directory
+import functools
+from flask import Flask, g, jsonify, request, send_from_directory, session, redirect, url_for, render_template_string
 from threading import Timer
 import webbrowser
+import db  # Import our new DB module
 
 # ----------------------------
-# 1. Шляхи до файлів
+# 1. Конфігурація
 # ----------------------------
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
 else:
     BASE_DIR = os.path.dirname(__file__)
 
-DB_PATH = os.path.join(BASE_DIR, "data.db")
-SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
 STATIC_FOLDER = os.path.join(BASE_DIR, "static")
 
-# ----------------------------
-# 2. Flask app
-# ----------------------------
 app = Flask(__name__, static_folder=STATIC_FOLDER, static_url_path="/static")
-
+app.secret_key = "dev_secret_key_change_in_prod"  # Required for session
 
 # ----------------------------
-# 3. Функції роботи з базою
+# 2. Управління базою даних
 # ----------------------------
-
-
-def _ensure_psycopg2():
-    try:
-        import psycopg2, psycopg2.extras
-        return psycopg2, psycopg2.extras
-    except Exception:
-        return None, None
-
-_psycopg2, _psycopg2_extras = _ensure_psycopg2()
-
-class PGCursorWrapper:
-    """Wrap a psycopg2 cursor to accept sqlite-style '?' placeholders."""
-    def __init__(self, cur):
-        self.cur = cur
-    def execute(self, sql, params=None):
-        if params is None:
-            return self.cur.execute(sql)
-        sql2 = sql.replace("?", "%s")
-        return self.cur.execute(sql2, params)
-    def executemany(self, sql, seq):
-        sql2 = sql.replace("?", "%s")
-        return self.cur.executemany(sql2, seq)
-    def fetchone(self):
-        return self.cur.fetchone()
-    def fetchall(self):
-        return self.cur.fetchall()
-    def __getattr__(self, name):
-        return getattr(self.cur, name)
-
-class PGDBWrapper:
-    """Provide .cursor(), .commit(), .close() similar to sqlite3.Connection."""
-    def __init__(self, conn):
-        self.conn = conn
-    def cursor(self):
-        cur = self.conn.cursor(cursor_factory=_psycopg2_extras.RealDictCursor)
-        return PGCursorWrapper(cur)
-    def commit(self):
-        return self.conn.commit()
-    def close(self):
-        return self.conn.close()
-
-
-def get_db():
-    db = getattr(g, "_database", None)
-    if db is None:
-        DATABASE_URL = os.environ.get("DATABASE_URL")
-        if DATABASE_URL:
-            # Use managed Postgres when DATABASE_URL provided (Render provides this).
-            if not _psycopg2:
-                raise RuntimeError("psycopg2 is required for Postgres. Install psycopg2-binary.")
-            # psycopg2 accepts the DATABASE_URL directly
-            conn = _psycopg2.connect(DATABASE_URL)
-            # Return a wrapper that exposes cursor()/commit()/close()
-            db = g._database = PGDBWrapper(conn)
-        else:
-            need_init = not os.path.exists(DB_PATH)
-            conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            if need_init:
-                init_db(conn)
-            db = g._database = conn
-    return db
-
-
-def init_db(db):
-    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
-        db.executescript(f.read())
-    cur = db.cursor()
-    cur.execute("SELECT COUNT(*) as c FROM products")
-    if cur.fetchone()["c"] == 0:
-        cur.executemany(
-            "INSERT INTO products (sku, name, unit) VALUES (?,?,?)",
-            [
-                ("SKU001", "Молоток", "шт"),
-                ("SKU002", "Гайка M8", "шт"),
-                ("SKU003", "Саморіз 4x30", "шт"),
-            ],
-        )
-        cur.executemany(
-            "INSERT INTO locations (code, description) VALUES (?,?)",
-            [
-                ("A1", "Полиця A ряд 1"),
-                ("B1", "Полиця B ряд 1"),
-            ],
-        )
-        db.commit()
-
 
 @app.teardown_appcontext
-def close_db(exception):
-    db = getattr(g, "_database", None)
-    if db is not None:
-        db.close()
-
+def close_connection(exception):
+    db.close_db(exception)
 
 # ----------------------------
-# 4. Маршрути
+# 3. Аутентифікація
 # ----------------------------
+
+def login_required(view):
+    @functools.wraps(view)
+    def wrapped_view(**kwargs):
+        if g.user is None:
+            return redirect(url_for('login'))
+        return view(**kwargs)
+    return wrapped_view
+
+@app.before_request
+def load_logged_in_user():
+    user_id = session.get('user_id')
+    if user_id is None:
+        g.user = None
+    else:
+        g.user = db.get_user_by_id(db.get_db(), user_id)
+
+@app.route('/login', methods=('GET', 'POST'))
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        database = db.get_db()
+        error = None
+        
+        user = db.verify_user(database, username, password)
+
+        if user is None:
+            error = 'Невірне ім’я користувача або пароль.'
+
+        if error is None:
+            session.clear()
+            session['user_id'] = user['id']
+            return redirect(url_for('index'))
+
+        return render_template_string('''
+            <!doctype html>
+            <html lang="uk">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Вхід | Warehouse System</title>
+                <style>
+                    :root {
+                        --bg-color: #121212;
+                        --card-bg: #1e1e1e;
+                        --primary: #ff5722;
+                        --text: #e0e0e0;
+                        --input-bg: #2d2d2d;
+                    }
+                    body {
+                        background-color: var(--bg-color);
+                        color: var(--text);
+                        font-family: 'Inter', sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                    }
+                    .card {
+                        background: var(--card-bg);
+                        padding: 2rem;
+                        border-radius: 12px;
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+                        width: 100%;
+                        max-width: 360px;
+                        text-align: center;
+                        border: 1px solid #333;
+                    }
+                    h2 { margin-bottom: 1.5rem; color: var(--primary); font-weight: 600; }
+                    input {
+                        width: 100%;
+                        padding: 12px;
+                        margin-bottom: 1rem;
+                        background: var(--input-bg);
+                        border: 1px solid #444;
+                        border-radius: 6px;
+                        color: white;
+                        box-sizing: border-box;
+                        font-size: 1rem;
+                    }
+                    input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+                    button {
+                        width: 100%;
+                        padding: 12px;
+                        background: var(--primary);
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        font-size: 1rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: opacity 0.2s;
+                    }
+                    button:hover { opacity: 0.9; }
+                    .error { color: #ff6b6b; margin-bottom: 1rem; font-size: 0.9rem; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h2>Warehouse Login</h2>
+                    {% if error %}
+                        <div class="error">{{ error }}</div>
+                    {% endif %}
+                    <form method="post">
+                        <input name="username" placeholder="Логін" required autofocus>
+                        <input type="password" name="password" placeholder="Пароль" required>
+                        <button type="submit">Увійти</button>
+                    </form>
+                </div>
+            </body>
+            </html>
+        ''', error=error)
+
+    return render_template_string('''
+        <!doctype html>
+        <html lang="uk">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Вхід | Warehouse System</title>
+            <style>
+                :root {
+                    --bg-color: #121212;
+                    --card-bg: #1e1e1e;
+                    --primary: #ff5722;
+                    --text: #e0e0e0;
+                    --input-bg: #2d2d2d;
+                }
+                body {
+                    background-color: var(--bg-color);
+                    color: var(--text);
+                    font-family: 'Inter', sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .card {
+                    background: var(--card-bg);
+                    padding: 2rem;
+                    border-radius: 12px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+                    width: 100%;
+                    max-width: 360px;
+                    text-align: center;
+                    border: 1px solid #333;
+                }
+                h2 { margin-bottom: 1.5rem; color: var(--primary); font-weight: 600; }
+                input {
+                    width: 100%;
+                    padding: 12px;
+                    margin-bottom: 1rem;
+                    background: var(--input-bg);
+                    border: 1px solid #444;
+                    border-radius: 6px;
+                    color: white;
+                    box-sizing: border-box;
+                    font-size: 1rem;
+                }
+                input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+                button {
+                    width: 100%;
+                    padding: 12px;
+                    background: var(--primary);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: opacity 0.2s;
+                }
+                button:hover { opacity: 0.9; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>Warehouse Login</h2>
+                <form method="post">
+                    <input name="username" placeholder="Логін" required autofocus>
+                    <input type="password" name="password" placeholder="Пароль" required>
+                    <button type="submit">Увійти</button>
+                </form>
+            </div>
+        </body>
+        </html>
+    ''')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ----------------------------
+# 4. Основні маршрути
+# ----------------------------
+
 @app.route("/")
+@login_required
 def index():
     return send_from_directory(app.static_folder, "index.html")
-
 
 @app.route("/<path:path>")
 def static_proxy(path):
     return send_from_directory(app.static_folder, path)
 
-@app.route("/products")
-def get_products():
-    page = int(request.args.get("page", 1))
-    limit = int(request.args.get("limit", 10))
-    total = db.count("products")
-    products = db.select("products", offset=(page-1)*limit, limit=limit)
-    totalPages = (total + limit - 1) // limit
-    return jsonify({"items": products, "totalPages": totalPages})
+# ----------------------------
+# 5. API: Товари (Products)
+# ----------------------------
 
-# --- Products CRUD ---
 @app.route("/api/products", methods=["GET", "POST"])
+@login_required
 def products():
-    db = get_db()
-    cur = db.cursor()
     if request.method == "GET":
-        cur.execute("SELECT id, sku, name, unit FROM products ORDER BY sku")
-        return jsonify([dict(r) for r in cur.fetchall()])
+        rows = db.query_db("SELECT id, sku, name, unit FROM products ORDER BY sku")
+        return jsonify([dict(r) for r in rows])
+    
     data = request.get_json() or {}
     sku = data.get("sku")
     name = data.get("name")
     unit = data.get("unit", "шт")
+    
     if not sku or not name:
-        return jsonify({"error": "sku and name required"}), 400
+        return jsonify({"error": "Потрібні SKU та Назва"}), 400
+    
     try:
-        cur.execute(
-            "INSERT INTO products (sku,name,unit) VALUES (?,?,?)", (sku, name, unit)
-        )
-        db.commit()
+        db.execute_db("INSERT INTO products (sku,name,unit) VALUES (?,?,?)", (sku, name, unit))
         return jsonify({"ok": True}), 201
-    except sqlite3.IntegrityError as e:
-        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Помилка: {str(e)}"}), 400
 
-# --- API routes: /api/products, /api/locations, /api/stock, /api/receive, /api/pick, /api/transactions
-# API: products
 @app.route("/api/products/<int:pid>", methods=["GET", "PUT", "DELETE"])
+@login_required
 def product_item(pid):
-    db = get_db()
-    cur = db.cursor()
     if request.method == "GET":
-        cur.execute("SELECT id, sku, name, unit FROM products WHERE id = ?", (pid,))
-        r = cur.fetchone()
-        if not r:
-            return jsonify({"error": "not found"}), 404
-        return jsonify(dict(r))
+        row = db.query_db("SELECT id, sku, name, unit FROM products WHERE id = ?", (pid,), one=True)
+        if not row:
+            return jsonify({"error": "Товар не знайдено"}), 404
+        return jsonify(dict(row))
+    
     if request.method == "PUT":
         data = request.get_json() or {}
         sku = data.get("sku")
         name = data.get("name")
         unit = data.get("unit", "шт")
         if not sku or not name:
-            return jsonify({"error": "sku and name required"}), 400
+            return jsonify({"error": "Потрібні SKU та Назва"}), 400
         try:
-            cur.execute(
-                "UPDATE products SET sku=?, name=?, unit=? WHERE id=?",
-                (sku, name, unit, pid),
-            )
-            if cur.rowcount == 0:
-                return jsonify({"error": "not found"}), 404
-            db.commit()
+            db.execute_db("UPDATE products SET sku=?, name=?, unit=? WHERE id=?", (sku, name, unit, pid))
             return jsonify({"ok": True})
-        except sqlite3.IntegrityError as e:
+        except Exception as e:
             return jsonify({"error": str(e)}), 400
+            
     if request.method == "DELETE":
-        # prevent deletion if product has transactions
-        cur.execute(
-            "SELECT COUNT(*) as c FROM transactions WHERE product_id = ?", (pid,)
-        )
-        if cur.fetchone()["c"] > 0:
-            return (
-                jsonify({"error": "cannot delete product: transactions exist"}),
-                400,
-            )
-        cur.execute("DELETE FROM products WHERE id = ?", (pid,))
-        if cur.rowcount == 0:
-            return jsonify({"error": "not found"}), 404
-        db.commit()
+        # Перевірка на використання в транзакціях
+        count = db.query_db("SELECT COUNT(*) as c FROM transactions WHERE product_id = ?", (pid,), one=True)
+        if count["c"] > 0:
+            return jsonify({"error": "Неможливо видалити: є транзакції"}), 400
+        
+        db.execute_db("DELETE FROM products WHERE id = ?", (pid,))
         return jsonify({"ok": True})
 
-# --- Locations CRUD ---
-@app.route("/locations")
-def get_locations():
-    page = int(request.args.get("page", 1))
-    limit = int(request.args.get("limit", 1))
-    total = db.count("locations", offset=(page-1)*limit, limit=limit)
-    totalPages = (total + limit - 1) // limit
-    return jsonify({"items": products, "totalPages": totalPages})
+# ----------------------------
+# 6. API: Локації (Locations)
+# ----------------------------
 
 @app.route("/api/locations", methods=["GET", "POST"])
+@login_required
 def locations():
-    db = get_db()
-    cur = db.cursor()
     if request.method == "GET":
-        cur.execute("SELECT id, code, description FROM locations ORDER BY code")
-        return jsonify([dict(r) for r in cur.fetchall()])
+        rows = db.query_db("SELECT id, code, description FROM locations ORDER BY code")
+        return jsonify([dict(r) for r in rows])
+    
     data = request.get_json() or {}
     code = data.get("code")
     desc = data.get("description", "")
+    
     if not code:
-        return jsonify({"error": "code required"}), 400
+        return jsonify({"error": "Потрібен код локації"}), 400
+    
     try:
-        cur.execute(
-            "INSERT INTO locations (code,description) VALUES (?,?)", (code, desc)
-        )
-        db.commit()
+        db.execute_db("INSERT INTO locations (code,description) VALUES (?,?)", (code, desc))
         return jsonify({"ok": True}), 201
-    except sqlite3.IntegrityError as e:
+    except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 @app.route("/api/locations/<int:lid>", methods=["GET", "PUT", "DELETE"])
+@login_required
 def location_item(lid):
-    db = get_db()
-    cur = db.cursor()
     if request.method == "GET":
-        cur.execute(
-            "SELECT id, code, description FROM locations WHERE id = ?", (lid,)
-        )
-        r = cur.fetchone()
-        if not r:
-            return jsonify({"error": "not found"}), 404
-        return jsonify(dict(r))
+        row = db.query_db("SELECT id, code, description FROM locations WHERE id = ?", (lid,), one=True)
+        if not row:
+            return jsonify({"error": "Локацію не знайдено"}), 404
+        return jsonify(dict(row))
+        
     if request.method == "PUT":
         data = request.get_json() or {}
         code = data.get("code")
         desc = data.get("description", "")
         if not code:
-            return jsonify({"error": "code required"}), 400
+            return jsonify({"error": "Потрібен код локації"}), 400
         try:
-            cur.execute(
-                "UPDATE locations SET code=?, description=? WHERE id=?",
-                (code, desc, lid),
-            )
-            if cur.rowcount == 0:
-                return jsonify({"error": "not found"}), 404
-            db.commit()
+            db.execute_db("UPDATE locations SET code=?, description=? WHERE id=?", (code, desc, lid))
             return jsonify({"ok": True})
-        except sqlite3.IntegrityError as e:
+        except Exception as e:
             return jsonify({"error": str(e)}), 400
+            
     if request.method == "DELETE":
-        # prevent deletion if transactions reference this location
-        cur.execute(
-            "SELECT COUNT(*) as c FROM transactions WHERE location_id = ?", (lid,)
-        )
-        if cur.fetchone()["c"] > 0:
-            return (
-                jsonify(
-                    {"error": "cannot delete location: referenced by transactions"}
-                ),
-                400,
-            )
-        cur.execute("DELETE FROM locations WHERE id = ?", (lid,))
-        if cur.rowcount == 0:
-            return jsonify({"error": "not found"}), 404
-        db.commit()
+        count = db.query_db("SELECT COUNT(*) as c FROM transactions WHERE location_id = ?", (lid,), one=True)
+        if count["c"] > 0:
+            return jsonify({"error": "Неможливо видалити: локація використовується"}), 400
+        
+        db.execute_db("DELETE FROM locations WHERE id = ?", (lid,))
         return jsonify({"ok": True})
 
+# ----------------------------
+# 7. API: Склад (Stock) та Операції
+# ----------------------------
 
-# API: stock
 @app.route("/api/stock", methods=["GET"])
+@login_required
 def stock():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """
+    # Інвентаризація: JOIN products + locations
+    query = """
         SELECT s.id, p.sku, p.name, p.unit, l.code as location, s.batch, s.quantity
         FROM stock s
         JOIN products p ON p.id = s.product_id
         JOIN locations l ON l.id = s.location_id
+        WHERE s.quantity > 0
         ORDER BY p.sku, l.code
     """
-    )
-    return jsonify([dict(r) for r in cur.fetchall()])
+    rows = db.query_db(query)
+    return jsonify([dict(r) for r in rows])
 
+def find_product_id(sku):
+    row = db.query_db("SELECT id FROM products WHERE sku = ?", (sku,), one=True)
+    return row["id"] if row else None
 
-def find_product(db, sku):
-    cur = db.cursor()
-    cur.execute("SELECT id FROM products WHERE sku = ?", (sku,))
-    r = cur.fetchone()
-    return r["id"] if r else None
+def find_location_id(code):
+    row = db.query_db("SELECT id FROM locations WHERE code = ?", (code,), one=True)
+    return row["id"] if row else None
 
-
-def find_location(db, code):
-    cur = db.cursor()
-    cur.execute("SELECT id FROM locations WHERE code = ?", (code,))
-    r = cur.fetchone()
-    return r["id"] if r else None
-
-
-# API: receive
 @app.route("/api/receive", methods=["POST"])
+@login_required
 def receive():
-    db = get_db()
+    """Прийом товару на склад (Reception)"""
     data = request.get_json() or {}
     sku = data.get("sku")
-    loc = data.get("location")
+    loc_code = data.get("location")
     qty = int(data.get("qty", 0))
     batch = data.get("batch")
     note = data.get("note", "")
-    if not sku or not loc or qty <= 0:
-        return jsonify({"error": "sku, location and qty>0 required"}), 400
-    pid = find_product(db, sku)
+    
+    if not sku or not loc_code or qty <= 0:
+        return jsonify({"error": "Потрібні SKU, Локація та Кількість > 0"}), 400
+    
+    pid = find_product_id(sku)
     if pid is None:
-        return jsonify({"error": "product not found"}), 404
-    lid = find_location(db, loc)
+        return jsonify({"error": f"Товар {sku} не знайдено"}), 404
+        
+    lid = find_location_id(loc_code)
     if lid is None:
-        return jsonify({"error": "location not found"}), 404
-    cur = db.cursor()
+        return jsonify({"error": f"Локацію {loc_code} не знайдено"}), 404
+    
+    database = db.get_db()
+    cur = database.cursor()
     try:
+        # Check if stock exists for this batch/loc
         cur.execute(
             "SELECT id, quantity FROM stock WHERE product_id=? AND location_id=? AND (batch IS ? OR batch = ?)",
             (pid, lid, batch, batch),
         )
         row = cur.fetchone()
+        
         if row:
             newq = row["quantity"] + qty
             cur.execute("UPDATE stock SET quantity=? WHERE id=?", (newq, row["id"]))
@@ -354,114 +415,178 @@ def receive():
                 "INSERT INTO stock (product_id, location_id, batch, quantity) VALUES (?,?,?,?)",
                 (pid, lid, batch, qty),
             )
+            
         cur.execute(
             "INSERT INTO transactions (type, product_id, location_id, qty, batch, note) VALUES (?,?,?,?,?,?)",
             ("receive", pid, lid, qty, batch, note),
         )
-        db.commit()
+        database.commit()
         return jsonify({"ok": True})
     except Exception as e:
-        db.rollback()
+        database.rollback()
         return jsonify({"error": str(e)}), 500
 
-
-# API: pick
 @app.route("/api/pick", methods=["POST"])
+@login_required
 def pick():
-    db = get_db()
+    """Відвантаження товару (Picking) - FIFO Logic"""
     data = request.get_json() or {}
     sku = data.get("sku")
-    loc = data.get("location")
+    loc_code = data.get("location") # Optional
     qty = int(data.get("qty", 0))
-    batch = data.get("batch")
+    batch = data.get("batch") # Optional
     note = data.get("note", "")
+    
     if not sku or qty <= 0:
-        return jsonify({"error": "sku and qty>0 required"}), 400
-    pid = find_product(db, sku)
+        return jsonify({"error": "Потрібні SKU та Кількість > 0"}), 400
+        
+    pid = find_product_id(sku)
     if pid is None:
-        return jsonify({"error": "product not found"}), 404
+        return jsonify({"error": f"Товар {sku} не знайдено"}), 404
+        
     lid = None
-    if loc:
-        lid = find_location(db, loc)
+    if loc_code:
+        lid = find_location_id(loc_code)
         if lid is None:
-            return jsonify({"error": "location not found"}), 404
-    cur = db.cursor()
+            return jsonify({"error": f"Локацію {loc_code} не знайдено"}), 404
+            
+    database = db.get_db()
+    cur = database.cursor()
     try:
+        # Strategy: If location specified, pick from there.
+        # If not, pick from ANY location using FIFO (oldest batch/id first).
+        
         if lid:
+            # Specific location pick
             cur.execute(
                 "SELECT id, quantity FROM stock WHERE product_id=? AND location_id=? AND (batch IS ? OR batch = ?)",
                 (pid, lid, batch, batch),
             )
             row = cur.fetchone()
             if not row or row["quantity"] < qty:
-                return jsonify({"error": "insufficient qty at location"}), 400
+                return jsonify({"error": "Недостатньо товару на вказаній локації"}), 400
+            
             newq = row["quantity"] - qty
-            cur.execute("UPDATE stock SET quantity=? WHERE id=?", (newq, row["id"]))
+            if newq == 0:
+                cur.execute("DELETE FROM stock WHERE id=?", (row["id"],))
+            else:
+                cur.execute("UPDATE stock SET quantity=? WHERE id=?", (newq, row["id"]))
+            
         else:
+            # Auto-pick (FIFO)
+            # Sort by batch (if date-based) or ID (insertion order)
             cur.execute(
-                "SELECT id, quantity FROM stock WHERE product_id=? ORDER BY id", (pid,)
+                "SELECT id, quantity, location_id, batch FROM stock WHERE product_id=? AND quantity > 0 ORDER BY id ASC", 
+                (pid,)
             )
-            remaining = qty
             rows = cur.fetchall()
+            
+            remaining = qty
+            
+            # Calculate total available first
+            total_avail = sum(r["quantity"] for r in rows)
+            if total_avail < qty:
+                return jsonify({"error": f"Недостатньо товару на складі. Доступно: {total_avail}"}), 400
+                
             for r in rows:
                 if remaining <= 0:
                     break
                 take = min(remaining, r["quantity"])
                 newq = r["quantity"] - take
-                cur.execute("UPDATE stock SET quantity=? WHERE id=?", (newq, r["id"]))
+                
+                if newq == 0:
+                    cur.execute("DELETE FROM stock WHERE id=?", (r["id"],))
+                else:
+                    cur.execute("UPDATE stock SET quantity=? WHERE id=?", (newq, r["id"]))
+                
+                # Log transaction for each deduction (optional, but better for traceability)
+                # Or we can just log one big transaction. Let's log one big one for simplicity 
+                # but technically we took from multiple places. 
+                # For this MVP, we will log one transaction with NULL location if multi-pick, 
+                # or we should log multiple? Let's log multiple if we want precise tracking.
+                # But the requirement is simple. Let's just log one generic "pick".
+                
                 remaining -= take
-            if remaining > 0:
-                return jsonify({"error": "insufficient total qty"}), 400
+                
         cur.execute(
             "INSERT INTO transactions (type, product_id, location_id, qty, batch, note) VALUES (?,?,?,?,?,?)",
             ("pick", pid, lid, qty, batch, note),
         )
-        db.commit()
+        database.commit()
         return jsonify({"ok": True})
+        
     except Exception as e:
-        db.rollback()
+        database.rollback()
         return jsonify({"error": str(e)}), 500
 
-
-# API: transactions
 @app.route("/api/transactions", methods=["GET"])
+@login_required
 def transactions():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """SELECT t.id, t.type, p.sku, p.name, l.code as location, t.qty, t.batch, t.ts, t.note
-                   FROM transactions t
-                   LEFT JOIN products p ON p.id = t.product_id
-                   LEFT JOIN locations l ON l.id = t.location_id
-                   ORDER BY t.ts DESC LIMIT 200"""
-    )
-    return jsonify([dict(r) for r in cur.fetchall()])
+    query = """
+        SELECT t.id, t.type, p.sku, p.name, l.code as location, t.qty, t.batch, t.ts, t.note
+        FROM transactions t
+        LEFT JOIN products p ON p.id = t.product_id
+        LEFT JOIN locations l ON l.id = t.location_id
+        ORDER BY t.ts DESC LIMIT 200
+    """
+    rows = db.query_db(query)
+    return jsonify([dict(r) for r in rows])
 
 # ----------------------------
-# 5. Допоміжні функції find_product, find_location
+# 9. API: Користувачі (Admin)
 # ----------------------------
 
+@app.route("/api/me")
+@login_required
+def me():
+    return jsonify({
+        "id": g.user["id"],
+        "username": g.user["username"],
+        "role": g.user["role"]
+    })
 
-def find_product(db, sku):
-    cur = db.cursor()
-    cur.execute("SELECT id FROM products WHERE sku = ?", (sku,))
-    r = cur.fetchone()
-    return r["id"] if r else None
+@app.route("/api/users", methods=["GET", "POST"])
+@login_required
+def users():
+    if g.user["role"] != "admin":
+        return jsonify({"error": "Доступ заборонено"}), 403
+        
+    if request.method == "GET":
+        rows = db.query_db("SELECT id, username, role FROM users ORDER BY username")
+        return jsonify([dict(r) for r in rows])
+        
+    data = request.get_json() or {}
+    username = data.get("username")
+    password = data.get("password")
+    role = data.get("role", "user")
+    
+    if not username or not password:
+        return jsonify({"error": "Потрібні ім'я та пароль"}), 400
+        
+    if db.create_user(db.get_db(), username, password, role):
+        return jsonify({"ok": True}), 201
+    else:
+        return jsonify({"error": "Користувач вже існує"}), 400
 
-
-def find_location(db, code):
-    cur = db.cursor()
-    cur.execute("SELECT id FROM locations WHERE code = ?", (code,))
-    r = cur.fetchone()
-    return r["id"] if r else None
-
+@app.route("/api/users/<int:uid>", methods=["DELETE"])
+@login_required
+def delete_user(uid):
+    if g.user["role"] != "admin":
+        return jsonify({"error": "Доступ заборонено"}), 403
+    
+    if uid == g.user["id"]:
+        return jsonify({"error": "Не можна видалити самого себе"}), 400
+        
+    db.execute_db("DELETE FROM users WHERE id = ?", (uid,))
+    return jsonify({"ok": True})
 
 # ----------------------------
-# 6. Запуск сервера і відкриття браузера
+# 8. Запуск
 # ----------------------------
 if __name__ == "__main__":
-    port = 5000
+    port = 5555
     url = f"http://127.0.0.1:{port}/"
+    # Open browser only if not reloader
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         Timer(1, lambda: webbrowser.open(url)).start()
     app.run(host="0.0.0.0", port=port, debug=True)
