@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS stock (
     FOREIGN KEY(location_id) REFERENCES locations(id) ON DELETE CASCADE
 );
 
+
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,
@@ -36,4 +37,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY(product_id) REFERENCES products(id),
     FOREIGN KEY(location_id) REFERENCES locations(id)
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'user'
+);
+
 
